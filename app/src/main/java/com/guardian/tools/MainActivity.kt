@@ -3,6 +3,7 @@ package com.guardian.tools
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -248,13 +249,30 @@ private fun GuardianScreen() {
                             Text("Versão 1.1.0 • Android 8 ou superior • Sem root.")
                             Text("Inclui explorador de APK, lista de apps, busca por linhas, filtros numéricos/hexadecimais, substituição controlada, desfazer e salvamento de cópia.")
                             Text("O sandbox do Android impede que apps comuns leiam livremente a memória e os diretórios privados de outros jogos. Para testar valores em tempo real, use uma API de depuração criada pelo próprio jogo.")
-                            OutlinedButton(
+                            Button(
                                 onClick = {
-                                    context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
+                                    if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(context)) {
+                                        context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
+                                        status = "Autorize 'Sobrepor a outros apps', volte ao GUARDIAN e toque em Iniciar painel."
+                                    } else {
+                                        try {
+                                            context.startForegroundService(Intent(context, FloatingPanelService::class.java))
+                                            status = "Serviço flutuante solicitado. O ícone G deve aparecer na tela."
+                                        } catch (e: Exception) {
+                                            status = "Não foi possível iniciar o painel: ${e.message}"
+                                        }
+                                    }
                                 },
                                 modifier = Modifier.fillMaxWidth()
-                            ) { Text("Abrir configuração de sobreposição") }
-                            Text("Esta opção abre as configurações do Android. Um painel flutuante real ainda não foi implementado.", style = MaterialTheme.typography.bodySmall)
+                            ) { Text("Iniciar painel flutuante") }
+                            OutlinedButton(
+                                onClick = {
+                                    context.stopService(Intent(context, FloatingPanelService::class.java))
+                                    status = "Comando para encerrar o painel enviado."
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Encerrar painel flutuante") }
+                            Text("Depois de autorizar a sobreposição, volte ao app e toque novamente em Iniciar painel. O círculo G abre o menu e pode ser arrastado.", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                     HorizontalDivider()
