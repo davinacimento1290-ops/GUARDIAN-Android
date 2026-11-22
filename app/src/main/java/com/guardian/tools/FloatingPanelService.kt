@@ -1,6 +1,10 @@
 package com.guardian.tools
 
 import android.app.Notification
+import android.app.AppOpsManager
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
+import android.os.Process
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
@@ -38,6 +42,7 @@ class FloatingPanelService : Service() {
     private var searchQuery = ""
     private var appFilter = ""
     private var selectedPackage = ""
+    private var processStatus = "Ainda não verificado"
     private var lastSearchResults: List<Pair<String, Int>> = emptyList()
     private var editInput = ""
     private val enabledServices = linkedMapOf(
@@ -104,6 +109,47 @@ class FloatingPanelService : Service() {
         bubble = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
+    }
+
+    private fun hasUsageAccess(): Boolean {
+        val appOps = getSystemService(AppOpsManager::class.java)
+        return appOps.checkOpNoThrow(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            packageName
+        ) == AppOpsManager.MODE_ALLOWED
+    }
+
+    // Android exposes recent foreground activity events, not arbitrary app PIDs.
+    private fun detectRecentForegroundPackage(): String {
+        val manager = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
+        val end = System.currentTimeMillis()
+        val events = manager.queryEvents(end - 10 * 60 * 1000L, end)
+        val event = UsageEvents.Event()
+        var latestPackage = ""
+        var latestTime = 0L
+        var latestWasForeground = false
+
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            val foreground = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED
+            } else {
+                event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+            }
+            val background = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                event.eventType == UsageEvents.Event.ACTIVITY_PAUSED ||
+                    event.eventType == UsageEvents.Event.ACTIVITY_STOPPED
+            } else {
+                event.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND
+            }
+            if ((foreground || background) && event.timeStamp >= latestTime) {
+                latestTime = event.timeStamp
+                latestPackage = event.packageName ?: ""
+                latestWasForeground = foreground
+            }
+        }
+        return if (latestWasForeground) latestPackage else ""
     }
 
     private fun createNotificationChannel() {
@@ -369,6 +415,26 @@ class FloatingPanelService : Service() {
                     .sortedBy { it.second.lowercase() }
                 body.addView(label("${apps.size} aplicativo(s) encontrado(s)", 12f, Color.LTGRAY))
                 body.addView(label(if (selectedPackage.isBlank()) "Nenhum jogo selecionado" else "Selecionado: $selectedPackage", 12f, Color.rgb(90, 205, 255)))
+                body.addView(actionButton("Verificar app em primeiro plano") {
+                    if (!hasUsageAccess()) {
+                        processStatus = "Permissão de acesso ao uso necessária"
+                        Toast.makeText(this@FloatingPanelService, "Ative o acesso de uso para o GUARDIAN.", Toast.LENGTH_LONG).show()
+                        try {
+                            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        } catch (_: Exception) {
+                            Toast.makeText(this@FloatingPanelService, "Abra Configurações e procure Acesso ao uso.", Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        val foregroundPackage = detectRecentForegroundPackage()
+                        processStatus = when {
+                            foregroundPackage.isBlank() -> "Nenhuma atividade em primeiro plano identificada nos últimos 10 minutos"
+                            selectedPackage.isNotBlank() && foregroundPackage == selectedPackage -> "O app selecionado foi o último em primeiro plano: $foregroundPackage"
+                            else -> "Último app em primeiro plano: $foregroundPackage"
+                        }
+                        renderPanelBody(root)
+                    }
+                })
+                body.addView(label(processStatus, 11f, Color.rgb(90, 205, 255)))
                 apps.take(35).forEach { (packageName, appName) ->
                     val row = LinearLayout(this).apply {
                         orientation = LinearLayout.HORIZONTAL
@@ -399,7 +465,7 @@ class FloatingPanelService : Service() {
                     body.addView(row)
                 }
                 if (apps.size > 35) body.addView(label("Exibindo os primeiros 35 resultados. O filtro pesquisa nome e pacote.", 11f, Color.LTGRAY))
-                body.addView(label("A seleção identifica o aplicativo instalado; não concede acesso ao processo ou à memória privada dele.", 11f, Color.LTGRAY))
+                body.addView(label("Android permite consultar eventos recentes de primeiro plano com permissão especial, mas não revela PID nem memória privada de outros processos. A pesquisa/edição continua limitada aos dados de teste do GUARDIAN.", 11f, Color.LTGRAY))
             }
             "Buscar" -> {
                 body.addView(label("PESQUISA • DADOS DE TESTE", 13f, Color.rgb(90, 205, 255)))
