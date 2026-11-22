@@ -272,7 +272,7 @@ private fun GuardianScreen() {
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) { Text("Encerrar painel flutuante") }
-                            Text("Autorize a sobreposição do GUARDIAN, volte ao app e toque novamente em Ativar sobreposição. O círculo G abre o painel e pode ser arrastado."), style = MaterialTheme.typography.bodySmall)
+                            Text("Autorize a sobreposição do GUARDIAN, volte ao app e toque novamente em Ativar sobreposição. O círculo G abre o painel e pode ser arrastado.", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                     HorizontalDivider()
