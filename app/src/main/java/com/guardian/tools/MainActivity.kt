@@ -257,14 +257,14 @@ private fun GuardianScreen() {
                                     } else {
                                         try {
                                             context.startForegroundService(Intent(context, FloatingPanelService::class.java))
-                                            status = "Serviço flutuante solicitado. O ícone G deve aparecer na tela."
+                                            status = "Sobreposição solicitada. O ícone G deve aparecer na tela."
                                         } catch (e: Exception) {
                                             status = "Não foi possível iniciar o painel: ${e.message}"
                                         }
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth()
-                            ) { Text("Iniciar painel flutuante") }
+                            ) { Text("Ativar sobreposição GUARDIAN") }
                             OutlinedButton(
                                 onClick = {
                                     context.stopService(Intent(context, FloatingPanelService::class.java))
@@ -272,7 +272,7 @@ private fun GuardianScreen() {
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) { Text("Encerrar painel flutuante") }
-                            Text("Depois de autorizar a sobreposição, volte ao app e toque novamente em Iniciar painel. O círculo G abre o menu e pode ser arrastado.", style = MaterialTheme.typography.bodySmall)
+                            Text("Autorize a sobreposição do GUARDIAN, volte ao app e toque novamente em Ativar sobreposição. O círculo G abre o painel e pode ser arrastado."), style = MaterialTheme.typography.bodySmall)
                         }
                     }
                     HorizontalDivider()
