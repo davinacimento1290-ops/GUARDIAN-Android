@@ -17,10 +17,12 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import android.text.InputType
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -31,6 +33,10 @@ class FloatingPanelService : Service() {
     private var panel: View? = null
     private var currentTab = "Ferramentas"
     private val values = linkedMapOf("Moedas (demo)" to 1250, "Nível (demo)" to 12, "Energia (demo)" to 80)
+    private val originalValues = values.toMap()
+    private var searchQuery = ""
+    private var lastSearchResults: List<Pair<String, Int>> = emptyList()
+    private var editInput = ""
     private val enabledServices = linkedMapOf(
         "Editor de arquivos" to true,
         "Explorador de APK" to true,
@@ -281,7 +287,7 @@ class FloatingPanelService : Service() {
         root.addView(header)
 
         val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("Ferramentas", "Valores", "Serviços", "Config.").forEach { tab ->
+        listOf("Ferramentas", "Buscar", "Valores", "Editar", "Serviços", "Config.").forEach { tab ->
             tabs.addView(
                 actionButton(tab) {
                     currentTab = tab
@@ -330,6 +336,35 @@ class FloatingPanelService : Service() {
                         Color.LTGRAY
                     )
                 )
+            }
+            "Buscar" -> {
+                body.addView(label("PESQUISA • DADOS DE TESTE", 13f, Color.rgb(90, 205, 255)))
+                body.addView(label("Pesquisa somente os valores de demonstração mantidos pelo GUARDIAN. Não acessa a memória de outros jogos.", 12f, Color.LTGRAY))
+                val queryField = EditText(this).apply {
+                    setSingleLine(true)
+                    hint = "Nome ou valor (ex.: moedas, 1250)"
+                    setText(searchQuery)
+                    setTextColor(Color.WHITE)
+                    setHintTextColor(Color.GRAY)
+                }
+                body.addView(queryField)
+                body.addView(actionButton("Pesquisar valores") {
+                    searchQuery = queryField.text?.toString()?.trim().orEmpty()
+                    lastSearchResults = values.filter { (name, value) ->
+                        searchQuery.isNotBlank() &&
+                            (name.contains(searchQuery, ignoreCase = true) || value.toString().contains(searchQuery))
+                    }.map { it.key to it.value }
+                    renderPanelBody(root)
+                })
+                body.addView(label("${lastSearchResults.size} resultado(s)", 12f, Color.LTGRAY))
+                lastSearchResults.forEach { (name, value) ->
+                    body.addView(actionButton("$name  =  $value") {
+                        selectedValue = name
+                        editInput = value.toString()
+                        currentTab = "Editar"
+                        renderPanelBody(root)
+                    })
+                }
             }
             "Valores" -> {
                 body.addView(label("PERFIL LOCAL DE DEMONSTRAÇÃO", 12f, Color.rgb(255, 205, 90)))
@@ -380,6 +415,39 @@ class FloatingPanelService : Service() {
                         renderPanelBody(root)
                     }
                 )
+            }
+            "Editar" -> {
+                body.addView(label("EDITOR DE VALORES TEMPORÁRIOS", 13f, Color.rgb(90, 205, 255)))
+                body.addView(label("Selecionado: $selectedValue", 13f, Color.WHITE))
+                val valueField = EditText(this).apply {
+                    inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
+                    setSingleLine(true)
+                    hint = "Novo valor inteiro"
+                    setText(if (editInput.isNotEmpty()) editInput else (values[selectedValue] ?: 0).toString())
+                    setTextColor(Color.WHITE)
+                    setHintTextColor(Color.GRAY)
+                }
+                body.addView(valueField)
+                body.addView(actionButton("Aplicar no perfil de teste") {
+                    val parsed = valueField.text?.toString()?.toIntOrNull()
+                    if (parsed == null) {
+                        Toast.makeText(this@FloatingPanelService, "Digite um número inteiro válido.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        values[selectedValue] = parsed
+                        editInput = parsed.toString()
+                        Toast.makeText(this@FloatingPanelService, "Valor de demonstração atualizado.", Toast.LENGTH_SHORT).show()
+                        currentTab = "Valores"
+                        renderPanelBody(root)
+                    }
+                })
+                body.addView(actionButton("Restaurar valores originais") {
+                    originalValues.forEach { (name, value) -> values[name] = value }
+                    editInput = ""
+                    lastSearchResults = emptyList()
+                    Toast.makeText(this@FloatingPanelService, "Valores de demonstração restaurados.", Toast.LENGTH_SHORT).show()
+                    currentTab = "Valores"
+                    renderPanelBody(root)
+                })
             }
             "Serviços" -> {
                 body.addView(label("Serviços locais do GUARDIAN", 14f, Color.rgb(90, 205, 255)))
