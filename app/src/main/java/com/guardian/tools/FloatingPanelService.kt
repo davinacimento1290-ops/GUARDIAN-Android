@@ -18,6 +18,7 @@ import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -293,10 +294,14 @@ class FloatingPanelService : Service() {
                     currentTab = tab
                     renderPanelBody(root)
                 },
-                LinearLayout.LayoutParams(0, -2, 1f)
+                LinearLayout.LayoutParams(-2, -2)
             )
         }
-        root.addView(tabs)
+        val tabScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(tabs)
+        }
+        root.addView(tabScroll)
 
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
