@@ -36,6 +36,7 @@ class FloatingPanelService : Service() {
     private val values = linkedMapOf("Moedas (demo)" to 1250, "Nível (demo)" to 12, "Energia (demo)" to 80)
     private val originalValues = values.toMap()
     private var searchQuery = ""
+    private var appFilter = ""
     private var lastSearchResults: List<Pair<String, Int>> = emptyList()
     private var editInput = ""
     private val enabledServices = linkedMapOf(
@@ -141,14 +142,15 @@ class FloatingPanelService : Service() {
         return builder.build()
     }
 
-    private fun overlayParams(width: Int, height: Int, x: Int, y: Int): WindowManager.LayoutParams {
+    private fun overlayParams(width: Int, height: Int, x: Int, y: Int, focusable: Boolean = false): WindowManager.LayoutParams {
+        val flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            (if (focusable) 0 else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
         return WindowManager.LayoutParams(
             width,
             height,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            flags,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -178,7 +180,8 @@ class FloatingPanelService : Service() {
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.rgb(22, 133, 196))
+                colors = intArrayOf(Color.rgb(20, 165, 220), Color.rgb(91, 74, 210))
+                orientation = GradientDrawable.Orientation.TL_BR
                 setStroke((2 * density).toInt().coerceAtLeast(1), Color.WHITE)
             }
             elevation = 12f
@@ -288,7 +291,7 @@ class FloatingPanelService : Service() {
         root.addView(header)
 
         val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("Ferramentas", "Buscar", "Valores", "Editar", "Serviços", "Config.").forEach { tab ->
+        listOf("Ferramentas", "Jogos", "Buscar", "Valores", "Editar", "Serviços", "Config.").forEach { tab ->
             tabs.addView(
                 actionButton(tab) {
                     currentTab = tab
@@ -317,7 +320,7 @@ class FloatingPanelService : Service() {
 
         val x = min((12 * density).toInt(), max(0, screenWidth - panelWidth))
         val y = min((110 * density).toInt(), max(0, screenHeight - (220 * density).toInt()))
-        val params = overlayParams(panelWidth, WindowManager.LayoutParams.WRAP_CONTENT, x, y)
+        val params = overlayParams(panelWidth, WindowManager.LayoutParams.WRAP_CONTENT, x, y, focusable = true)
 
         windowManager.addView(root, params)
         panel = root
@@ -341,6 +344,54 @@ class FloatingPanelService : Service() {
                         Color.LTGRAY
                     )
                 )
+            }
+            "Jogos" -> {
+                body.addView(label("APLICATIVOS • ABRIR SEPARADAMENTE", 13f, Color.rgb(90, 205, 255)))
+                body.addView(label("Escolha um app instalado para abrir. A bolinha G continua ativa sobre a tela quando o Android permitir.", 12f, Color.LTGRAY))
+                val filterField = EditText(this).apply {
+                    setSingleLine(true)
+                    hint = "Filtrar aplicativos pelo nome"
+                    setText(appFilter)
+                    setTextColor(Color.WHITE)
+                    setHintTextColor(Color.GRAY)
+                }
+                body.addView(filterField)
+                body.addView(actionButton("Filtrar lista") {
+                    appFilter = filterField.text?.toString()?.trim().orEmpty()
+                    renderPanelBody(root)
+                })
+                val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                val apps = packageManager.queryIntentActivities(launcherIntent, 0)
+                    .map { info -> info.activityInfo.packageName to info.loadLabel(packageManager).toString() }
+                    .distinctBy { it.first }
+                    .filter { (_, name) -> appFilter.isBlank() || name.contains(appFilter, ignoreCase = true) }
+                    .sortedBy { it.second.lowercase() }
+                body.addView(label("${apps.size} aplicativo(s) encontrado(s)", 12f, Color.LTGRAY))
+                apps.take(35).forEach { (packageName, appName) ->
+                    val row = LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                    }
+                    val appInfo = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+                    appInfo.addView(label(appName, 13f, Color.WHITE))
+                    appInfo.addView(label(packageName, 9f, Color.LTGRAY))
+                    row.addView(appInfo, LinearLayout.LayoutParams(0, -2, 1f))
+                    row.addView(actionButton("Abrir") {
+                        val launch = packageManager.getLaunchIntentForPackage(packageName)
+                        if (launch == null) {
+                            Toast.makeText(this@FloatingPanelService, "Este app não oferece uma tela de inicialização.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            try {
+                                startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                hidePanel()
+                            } catch (error: Exception) {
+                                Toast.makeText(this@FloatingPanelService, "Não foi possível abrir: ${error.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    })
+                    body.addView(row)
+                }
+                if (apps.size > 35) body.addView(label("Exibindo os primeiros 35 resultados. Use o filtro para localizar outro app.", 11f, Color.LTGRAY))
             }
             "Buscar" -> {
                 body.addView(label("PESQUISA • DADOS DE TESTE", 13f, Color.rgb(90, 205, 255)))
