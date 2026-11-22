@@ -33,7 +33,7 @@ class FloatingPanelService : Service() {
     private var bubble: View? = null
     private var panel: View? = null
     private var currentTab = "Ferramentas"
-    private val values = linkedMapOf("Moedas (demo)" to 1250, "Nível (demo)" to 12, "Energia (demo)" to 80)
+    private val values = linkedMapOf("Diamantes (demo)" to 250, "Moedas (demo)" to 1250, "Vidas (demo)" to 5, "Energia (demo)" to 80, "XP (demo)" to 340, "Nível (demo)" to 12)
     private val originalValues = values.toMap()
     private var searchQuery = ""
     private var appFilter = ""
@@ -465,9 +465,7 @@ class FloatingPanelService : Service() {
                 body.addView(controls)
                 body.addView(
                     actionButton("Restaurar exemplos") {
-                        values["Moedas (demo)"] = 1250
-                        values["Nível (demo)"] = 12
-                        values["Energia (demo)"] = 80
+                        originalValues.forEach { (name, value) -> values[name] = value }
                         renderPanelBody(root)
                     }
                 )
