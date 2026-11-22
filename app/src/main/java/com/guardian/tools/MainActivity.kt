@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -38,10 +39,39 @@ private fun GuardianScreen() {
     var openedName by remember { mutableStateOf("Nenhum arquivo aberto") }
     var apkEntries by remember { mutableStateOf<List<String>>(emptyList()) }
 
+    // Ferramentas de análise e edição de arquivos autorizados.
+    var searchQuery by remember { mutableStateOf("") }
+    var replacement by remember { mutableStateOf("") }
+    var filterMode by remember { mutableStateOf("Tudo") }
+    val editHistory = remember { mutableStateListOf<String>() }
+
+    fun rememberBeforeChange() {
+        if (editHistory.lastOrNull() != editorText) {
+            editHistory.add(editorText)
+            if (editHistory.size > 30) editHistory.removeAt(0)
+        }
+    }
+
+    val visibleLines = remember(editorText, searchQuery, filterMode) {
+        editorText.lines().mapIndexed { index, line -> (index + 1) to line }
+            .filter { (_, line) ->
+                val queryMatches = searchQuery.isBlank() || line.contains(searchQuery, ignoreCase = true)
+                val typeMatches = when (filterMode) {
+                    "Números" -> Regex("[-+]?\\d+(\\.\\d+)?").containsMatchIn(line)
+                    "Hex" -> Regex("(?i)(0x)?[0-9a-f]{2,}").containsMatchIn(line)
+                    else -> true
+                }
+                queryMatches && typeMatches
+            }
+    }
+
     val configPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) try {
             context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { editorText = it.readText() }
             openedName = uri.lastPathSegment ?: "Arquivo selecionado"
+            searchQuery = ""
+            replacement = ""
+            editHistory.clear()
             status = "Arquivo carregado. O original não será sobrescrito."
         } catch (e: Exception) { status = "Erro ao ler arquivo: ${e.message}" }
     }
@@ -90,7 +120,7 @@ private fun GuardianScreen() {
             topBar = {
                 TopAppBar(
                     title = { Column {
-                        Text("GUARDIAN", style = MaterialTheme.typography.titleLarge)
+                        Text("GUARDIAN PRO MAX", style = MaterialTheme.typography.titleLarge)
                         Text("ANDROID TOOLKIT • SEM ROOT", style = MaterialTheme.typography.labelSmall)
                     } },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -100,7 +130,7 @@ private fun GuardianScreen() {
         ) { padding ->
             Column(Modifier.padding(padding).fillMaxSize()) {
                 ScrollableTabRow(selectedTabIndex = tab) {
-                    listOf("Apps", "APK", "Editor", "Sobre").forEachIndexed { index, label ->
+                    listOf("Apps", "APK", "Editor PRO", "Sobre").forEachIndexed { index, label ->
                         Tab(selected = tab == index, onClick = { tab = index }, text = { Text(label) })
                     }
                 }
@@ -129,28 +159,102 @@ private fun GuardianScreen() {
                             apkEntries.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall); HorizontalDivider() }
                         }
                         2 -> {
-                            Text("Editor de arquivos", style = MaterialTheme.typography.titleLarge)
-                            Text("Abra configurações ou arquivos de texto que você tem autorização para editar. Salve uma cópia para manter o original.")
+                            Text("Editor PRO de arquivos", style = MaterialTheme.typography.titleLarge)
+                            Text("Analise arquivos TXT, JSON, XML e INI que você tem autorização para editar. As alterações são feitas em uma cópia.")
                             OutlinedButton(onClick = { configPicker.launch(arrayOf("text/*", "application/json", "application/xml", "application/octet-stream")) }, modifier = Modifier.fillMaxWidth()) { Text("Abrir arquivo") }
                             Text(openedName, style = MaterialTheme.typography.labelMedium)
+
+                            OutlinedTextField(
+                                value = searchQuery, onValueChange = { searchQuery = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Buscar texto ou valor") },
+                                singleLine = true
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf("Tudo", "Números", "Hex").forEach { mode ->
+                                    FilterChip(
+                                        selected = filterMode == mode,
+                                        onClick = { filterMode = mode },
+                                        label = { Text(mode) }
+                                    )
+                                }
+                            }
+                            Text("${visibleLines.size} linha(s) encontrada(s)", style = MaterialTheme.typography.labelLarge)
+                            Card(Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(10.dp).heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
+                                    if (visibleLines.isEmpty()) {
+                                        Text("Nenhum resultado. Tente outro termo ou filtro.")
+                                    } else {
+                                        visibleLines.take(100).forEach { (lineNumber, line) ->
+                                            Text("$lineNumber  |  $line", style = MaterialTheme.typography.bodySmall)
+                                            HorizontalDivider()
+                                        }
+                                        if (visibleLines.size > 100) Text("Exibindo as primeiras 100 linhas. O arquivo completo continua preservado.")
+                                    }
+                                }
+                            }
+
+                            Text("Substituição controlada", style = MaterialTheme.typography.titleMedium)
+                            OutlinedTextField(
+                                value = replacement, onValueChange = { replacement = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Novo valor") },
+                                singleLine = true
+                            )
+                            Button(
+                                onClick = {
+                                    if (searchQuery.isNotBlank() && editorText.contains(searchQuery, ignoreCase = true)) {
+                                        rememberBeforeChange()
+                                        val regex = Regex(Regex.escape(searchQuery), RegexOption.IGNORE_CASE)
+                                        val count = regex.findAll(editorText).count()
+                                        editorText = regex.replace(editorText) { replacement }
+                                        status = "$count ocorrência(s) substituída(s). Use Desfazer se necessário."
+                                        searchQuery = ""
+                                    } else status = "Digite um termo existente para substituir."
+                                },
+                                enabled = searchQuery.isNotBlank() && editorText.isNotEmpty(),
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Substituir todas as ocorrências") }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = {
+                                        val previous = editHistory.removeLastOrNull()
+                                        if (previous != null) {
+                                            editorText = previous
+                                            status = "Última alteração desfeita."
+                                        } else status = "Não há alterações para desfazer."
+                                    },
+                                    enabled = editHistory.isNotEmpty(),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Desfazer") }
+                                OutlinedButton(
+                                    onClick = { savePicker.launch("guardian-pro-backup.txt") },
+                                    enabled = editorText.isNotEmpty(),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Salvar cópia") }
+                            }
+                            Text("Histórico local: ${editHistory.size}/30 etapa(s). O arquivo original não é sobrescrito.", style = MaterialTheme.typography.bodySmall)
                             OutlinedTextField(
                                 value = editorText, onValueChange = { editorText = it },
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp),
-                                label = { Text("Conteúdo") }, minLines = 8
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp),
+                                label = { Text("Conteúdo completo do arquivo") },
+                                minLines = 8
                             )
-                            Button(onClick = { savePicker.launch("guardian-backup.txt") }, enabled = editorText.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("Salvar cópia / backup") }
+                            Text("Dica: busque uma chave como velocidade=10 e substitua apenas o valor, conferindo a prévia antes de salvar.", style = MaterialTheme.typography.bodySmall)
                         }
                         else -> {
-                            Text("Sobre o GUARDIAN", style = MaterialTheme.typography.titleLarge)
-                            Text("Versão 1.0.0 • Android 8 ou superior • Sem root.")
-                            Text("O sandbox do Android impede que apps comuns leiam livremente a memória e os diretórios privados de outros jogos. Para testar valores, use arquivos exportados ou uma interface de depuração criada pelo próprio jogo.")
+                            Text("Sobre o GUARDIAN PRO MAX", style = MaterialTheme.typography.titleLarge)
+                            Text("Versão 1.1.0 • Android 8 ou superior • Sem root.")
+                            Text("Inclui explorador de APK, lista de apps, busca por linhas, filtros numéricos/hexadecimais, substituição controlada, desfazer e salvamento de cópia.")
+                            Text("O sandbox do Android impede que apps comuns leiam livremente a memória e os diretórios privados de outros jogos. Para testar valores em tempo real, use uma API de depuração criada pelo próprio jogo.")
                             OutlinedButton(
                                 onClick = {
                                     context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) { Text("Abrir configuração de sobreposição") }
-                            Text("O atalho abre as configurações do Android. O painel flutuante ainda não está implementado nesta versão.", style = MaterialTheme.typography.bodySmall)
+                            Text("Esta opção abre as configurações do Android. Um painel flutuante real ainda não foi implementado.", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                     HorizontalDivider()
