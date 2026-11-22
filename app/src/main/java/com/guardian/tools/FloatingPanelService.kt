@@ -37,6 +37,7 @@ class FloatingPanelService : Service() {
     private val originalValues = values.toMap()
     private var searchQuery = ""
     private var appFilter = ""
+    private var selectedPackage = ""
     private var lastSearchResults: List<Pair<String, Int>> = emptyList()
     private var editInput = ""
     private val enabledServices = linkedMapOf(
@@ -350,7 +351,7 @@ class FloatingPanelService : Service() {
                 body.addView(label("Escolha um app instalado para abrir. A bolinha G continua ativa sobre a tela quando o Android permitir.", 12f, Color.LTGRAY))
                 val filterField = EditText(this).apply {
                     setSingleLine(true)
-                    hint = "Filtrar aplicativos pelo nome"
+                    hint = "Filtrar por nome ou pacote (com...)"
                     setText(appFilter)
                     setTextColor(Color.WHITE)
                     setHintTextColor(Color.GRAY)
@@ -364,9 +365,10 @@ class FloatingPanelService : Service() {
                 val apps = packageManager.queryIntentActivities(launcherIntent, 0)
                     .map { info -> info.activityInfo.packageName to info.loadLabel(packageManager).toString() }
                     .distinctBy { it.first }
-                    .filter { (_, name) -> appFilter.isBlank() || name.contains(appFilter, ignoreCase = true) }
+                    .filter { (packageName, name) -> appFilter.isBlank() || name.contains(appFilter, ignoreCase = true) || packageName.contains(appFilter, ignoreCase = true) }
                     .sortedBy { it.second.lowercase() }
                 body.addView(label("${apps.size} aplicativo(s) encontrado(s)", 12f, Color.LTGRAY))
+                body.addView(label(if (selectedPackage.isBlank()) "Nenhum jogo selecionado" else "Selecionado: $selectedPackage", 12f, Color.rgb(90, 205, 255)))
                 apps.take(35).forEach { (packageName, appName) ->
                     val row = LinearLayout(this).apply {
                         orientation = LinearLayout.HORIZONTAL
@@ -376,6 +378,11 @@ class FloatingPanelService : Service() {
                     appInfo.addView(label(appName, 13f, Color.WHITE))
                     appInfo.addView(label(packageName, 9f, Color.LTGRAY))
                     row.addView(appInfo, LinearLayout.LayoutParams(0, -2, 1f))
+                    row.addView(actionButton(if (selectedPackage == packageName) "Selecionado" else "Selecionar") {
+                        selectedPackage = packageName
+                        Toast.makeText(this@FloatingPanelService, "App selecionado: $packageName", Toast.LENGTH_SHORT).show()
+                        renderPanelBody(root)
+                    })
                     row.addView(actionButton("Abrir") {
                         val launch = packageManager.getLaunchIntentForPackage(packageName)
                         if (launch == null) {
@@ -391,7 +398,8 @@ class FloatingPanelService : Service() {
                     })
                     body.addView(row)
                 }
-                if (apps.size > 35) body.addView(label("Exibindo os primeiros 35 resultados. Use o filtro para localizar outro app.", 11f, Color.LTGRAY))
+                if (apps.size > 35) body.addView(label("Exibindo os primeiros 35 resultados. O filtro pesquisa nome e pacote.", 11f, Color.LTGRAY))
+                body.addView(label("A seleção identifica o aplicativo instalado; não concede acesso ao processo ou à memória privada dele.", 11f, Color.LTGRAY))
             }
             "Buscar" -> {
                 body.addView(label("PESQUISA • DADOS DE TESTE", 13f, Color.rgb(90, 205, 255)))
