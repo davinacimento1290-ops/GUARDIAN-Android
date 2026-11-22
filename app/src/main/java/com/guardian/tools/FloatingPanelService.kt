@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
@@ -97,7 +98,7 @@ class FloatingPanelService : Service() {
             textSize = 21f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.rgb(22, 133, 196))
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(22, 133, 196)); setStroke((2 * resources.displayMetrics.density).toInt(), Color.WHITE) }
             elevation = 12f
             setOnClickListener { togglePanel() }
         }
